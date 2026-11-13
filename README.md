@@ -1,20 +1,3 @@
-# FoodLog Frontend
-
-React + TypeScript + Vite frontend for FoodLog.
-
-## Run locally
-
-1. Start the backend ([foodlog-backend](https://github.com/FoodLog-Team/foodlog-backend)) so it serves `http://localhost:8080/api`.
-2. Optional: copy `.env.example` to `.env` to change the API base URL or the dev proxy target.
-3. `npm install`
-4. `npm run dev`
-
-The backend has CORS disabled, so the Vite dev/preview server proxies `/api` to the backend
-(`VITE_DEV_PROXY_TARGET`, default `http://localhost:8080`). The verified auth contract is in
-[docs/auth-api-integration.md](docs/auth-api-integration.md).
-
----
-
 # React + TypeScript + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
