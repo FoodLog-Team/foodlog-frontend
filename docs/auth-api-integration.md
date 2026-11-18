@@ -1,13 +1,15 @@
 # Auth API integration
 
 Frontend-side record of the backend authentication contract used by FoodLog.
-Source: `FoodLog-Team/foodlog-backend`, branch `develop` (commit `6dd3138`).
+Source: `FoodLog-Team/foodlog-backend`, branch `develop` (commit `36a9788`).
 The backend is owned by another developer — nothing here was changed in the backend repository.
 
 **Verification status:** verified against backend source (controllers, DTOs, security config,
 exception handler) **and** live on 2026-11-13. The backend was started with `docker compose up --build`
 (PostgreSQL 17 container; all 4 Flyway migrations applied). Each endpoint below was called with
 `curl` directly on `:8080` and through the browser via the Vite proxy.
+Re-verified on 2026-11-18 against the Swagger spec (`/api/v3/api-docs`) and live calls for the
+registration change (`confirmPassword`, KEY-28). The other auth endpoints are unchanged.
 
 ## Base URL
 
@@ -50,26 +52,51 @@ All endpoints: `Content-Type: application/json` for request bodies; JSON respons
 Request (`UserRegistrationRequestDto`):
 
 ```json
-{ "email": "user@example.com", "password": "SecureP@ss1" }
+{ "email": "user@example.com", "password": "SecureP@ss1", "confirmPassword": "SecureP@ss1" }
 ```
+
+All three fields are required (Swagger `required: [confirmPassword, email, password]`).
 
 - `email`: `@NotBlank @Email`
 - `password`: `@NotBlank @Length(min = 8, max = 32)` + `@StrongPassword`
   (`^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])\S{8,32}$`, which also forbids whitespace)
+- `confirmPassword`: `@NotBlank @Length(min = 8, max = 32)`, and must equal `password`
+  (`@AssertTrue isPasswordsMatch()`, message `"Passwords do not match"`)
 
-The email is normalised server-side. Password confirmation is a frontend-only field.
+Swagger also lists a boolean `passwordsMatch` property. It is the computed `@AssertTrue` getter, not
+an input: the frontend does not send it. The email is normalised server-side.
 
 | Status | Body |
 |--------|------|
 | `201` | `{ "accessToken": "<jwt>" }` + `Set-Cookie: refresh_token_cookie=…` — the user is signed in |
-| `400` | `ValidationErrorResponse` (verified: errors for `email` and `password`; one field can have several messages) |
+| `400` | `ValidationErrorResponse`; one field can have several messages. Keys: `email`, `password`, `confirmPassword`, and `passwordsMatch` for a mismatch (verified, see below) |
 | `409` | `ErrorResponse`, message `"This email is already in use"` (verified) |
 | `500` | `ErrorResponse` (also possible on a simultaneous duplicate registration) |
 
+Verified `400` responses (2026-11-18):
+
+| Request | `errors` |
+|---------|----------|
+| `confirmPassword` omitted | `{ "confirmPassword": ["must not be blank"], "passwordsMatch": ["Passwords do not match"] }` |
+| `confirmPassword` differs | `{ "passwordsMatch": ["Passwords do not match"] }` |
+| `confirmPassword` empty | `{ "confirmPassword": ["must not be blank", "length must be between 8 and 32"], "passwordsMatch": [...] }` |
+
+#### Frontend registration flow
+
+1. The form has **Email**, **Password** and **Confirm password**, all required. Client-side
+   validation runs on blur and on submit: the password must pass the strength rules, and the
+   confirmation must not be empty and must match the password ("Passwords do not match.").
+   Nothing is sent while a field is invalid.
+2. The request body is `{ email (trimmed), password, confirmPassword }`.
+3. `201`: the access token is stored in memory and the user is sent to `/`.
+4. `409`: an inline error on the email field.
+5. `400`: field errors are shown inline. `confirmPassword` and `passwordsMatch` both map to the
+   Confirm password field. A `400` with no known field shows a generic form error.
+
 ### `POST /api/auth/login` — public
 
-Request (`UserLoginRequestDto`): same shape and **same validation** as registration, including
-`@StrongPassword`.
+Request (`UserLoginRequestDto`): `{ "email", "password" }` with the **same `email` and `password`
+validation** as registration, including `@StrongPassword`. There is no `confirmPassword`.
 
 | Status | Body |
 |--------|------|
@@ -137,7 +164,8 @@ The frontend never displays raw backend messages for these; it maps statuses to 
 `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`, `POSTGRES_DOCKER_PORT`,
 `SPRING_LOCAL_PORT`, `SPRING_DOCKER_PORT`, `JWT_SECRET` (Base64-decoded by `SecurityConfig`),
 `JWT_EXPIRATION`, `GEMINI_API_KEY`, `REFRESH_TOKEN_EXPIRATION`, `REFRESH_TOKEN_MAX_AMOUNT`,
-`REFRESH_TOKEN_MAX_AGE`, `REFRESH_TOKEN_COOKIE_PATH`, `REFRESH_TOKEN_COOKIE_SECURE`.
+`REFRESH_TOKEN_MAX_AGE`, `REFRESH_TOKEN_COOKIE_PATH`, `REFRESH_TOKEN_COOKIE_SECURE`,
+`MEAL_PHOTOS_DIRECTORY` (optional, default `./uploads`).
 
 ## Local backend setup used for verification
 
@@ -152,10 +180,11 @@ The backend `.env` (gitignored, never committed) followed the README, with these
 
 1. **CORS** is disabled. A deployed frontend on a different origin needs a CORS configuration that
    allows credentials, or the app has to be served from the same origin as the API.
-2. **`application.yaml`** has `jwt.secret: {JWT_SECRET}` and `jwt.expiration: {JWT_EXPIRATION}`
-   (missing `$`). They only work because environment variables override them through relaxed binding.
-   `docker-compose.yaml` passes `JWT_ACCESS_TOKEN_EXPIRATION_MS`, not `JWT_EXPIRATION`.
-3. **Refresh-token durations (confirmed live).** `REFRESH_TOKEN_EXPIRATION` and
+2. ~~**`application.yaml`** placeholders missing `$`~~ — fixed in `36a9788` (`${JWT_SECRET}`,
+   `${JWT_EXPIRATION}`). Still open: `docker-compose.yaml` passes `JWT_ACCESS_TOKEN_EXPIRATION_MS`,
+   not `JWT_EXPIRATION`.
+3. **Refresh-token durations (confirmed live)** — fixed in the backend README and `.env.example`
+   as of `36a9788` (`30d`). `REFRESH_TOKEN_EXPIRATION` and
    `REFRESH_TOKEN_MAX_AGE` bind to `Duration`, so the README's unitless `7` / `30` are read as
    milliseconds. With them, register/login responded with
    `Set-Cookie: refresh_token_cookie=…; Max-Age=0; Expires=Thu, 01 Jan 1970 …`: the browser drops the
@@ -163,7 +192,7 @@ The backend `.env` (gitignored, never committed) followed the README, with these
    `Max-Age=2592000` and refresh works. Please update the README / `.env.example` values.
 4. **Cookie path:** with the README's `REFRESH_TOKEN_COOKIE_PATH=/api/auth/refresh`, the browser
    doesn't send the cookie to `/api/auth/logout`, so logout can't revoke it server-side.
-   `/api/auth` (as in `.env.example`) covers both endpoints.
+   `/api/auth` (as in `.env.example`) covers both endpoints. Fixed in the backend README as of `36a9788`.
 5. **Login applies `@StrongPassword`**, so a wrong but differently formatted password returns `400`
    instead of `401`.
 6. **No current-user endpoint** (e.g. `GET /users/me`) to show who is signed in.

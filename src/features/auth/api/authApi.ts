@@ -9,6 +9,8 @@ import { request } from '../../../shared/api/httpClient'
 export interface RegisterRequest {
   email: string
   password: string
+  /** Required; must equal `password` (backend `@AssertTrue isPasswordsMatch`). */
+  confirmPassword: string
 }
 
 /** `UserLoginRequestDto` */

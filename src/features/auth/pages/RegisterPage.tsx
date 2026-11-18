@@ -69,7 +69,11 @@ export function RegisterPage() {
     pendingRef.current = true
     setPending(true)
     try {
-      await register({ email: values.email.trim(), password: values.password })
+      await register({
+        email: values.email.trim(),
+        password: values.password,
+        confirmPassword: values.confirmPassword,
+      })
       navigate('/', { replace: true })
     } catch (error) {
       handleError(error)
@@ -86,13 +90,19 @@ export function RegisterPage() {
         return
       }
       if (error.status === 400) {
+        // A mismatch is reported under `passwordsMatch` (the backend's @AssertTrue property).
         const next: FieldErrors = {
           email: error.fieldErrors.email?.[0],
           password: error.fieldErrors.password?.[0],
+          confirmPassword:
+            error.fieldErrors.confirmPassword?.[0] ?? error.fieldErrors.passwordsMatch?.[0],
         }
-        if (next.email || next.password) {
+        const firstServerError = (['email', 'password', 'confirmPassword'] as const).find(
+          (field) => next[field],
+        )
+        if (firstServerError) {
           setServerErrors(next)
-          focusField(next.email ? 'email' : 'password')
+          focusField(firstServerError)
         } else {
           setFormError('Please check your details and try again.')
         }

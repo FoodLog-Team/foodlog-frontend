@@ -1,7 +1,8 @@
 /**
  * Client-side validation for the auth forms. It mirrors (and never loosens) the backend rules:
  * `@NotBlank @Email` for email, `@StrongPassword @Length(min = 8, max = 32)` for password,
- * where StrongPassword is `^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])\S{8,32}$`.
+ * where StrongPassword is `^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[\W_])\S{8,32}$`, and
+ * `@NotBlank @Length(min = 8, max = 32)` plus "equals password" for confirmPassword (registration).
  * The backend remains the final authority.
  */
 
