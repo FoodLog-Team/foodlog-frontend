@@ -245,6 +245,16 @@ a:hover {
     border-color 0.15s,
     box-shadow 0.15s;
 }
+/* Chrome/Safari render a value autofilled on page load in their own (smaller) font until the
+   first user interaction, then switch to the page font. ::first-line is the only hook that
+   reaches that preview text, so pin both to the same font as a normal input. */
+.field__input:-webkit-autofill,
+.field__input:-webkit-autofill::first-line {
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+}
 .field__control:has(.field__toggle) .field__input {
   padding-right: 72px;
 }
